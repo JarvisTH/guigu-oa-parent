@@ -1,10 +1,13 @@
 package com.atguigu.security.filter;
 
+import com.alibaba.fastjson.JSON;
 import com.atguigu.common.jwt.JwtHelper;
 import com.atguigu.common.result.Result;
 import com.atguigu.common.result.ResultCodeEnum;
 import com.atguigu.common.utils.ResponseUtil;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -14,9 +17,18 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
+
+    private RedisTemplate redisTemplate;
+
+    public TokenAuthenticationFilter(RedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         logger.info("uri:" + request.getRequestURI());
@@ -41,7 +53,18 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         if (!StringUtils.isEmpty(token)) {
             String username = JwtHelper.getUsername(token);
             if (!StringUtils.isEmpty(username)) {
-                return new UsernamePasswordAuthenticationToken(username, null, Collections.emptyList());
+                // 通过username从redis获取权限数据
+                String authString = (String) redisTemplate.opsForValue().get(username);
+                // 将权限数据json转为要求的集合列表
+                List<SimpleGrantedAuthority> authList = new ArrayList<>();
+                if (!StringUtils.isEmpty(authString)) {
+                    List<Map> mapList = JSON.parseArray(authString, Map.class);
+                    for (Map map : mapList) {
+                        authList.add(new SimpleGrantedAuthority((String) map.get("authority")));
+                    }
+                    return new UsernamePasswordAuthenticationToken(username, null, authList);
+                }
+                return new UsernamePasswordAuthenticationToken(username, null, authList);
             }
         }
         return null;
