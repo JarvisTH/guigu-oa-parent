@@ -1,0 +1,50 @@
+// 所有脚本命令
+pipeline {
+		// 指定任务在任意集群节点
+		agent any
+
+		// 声明全局变量
+		environment {
+		    harborUser='admin'
+		    harborPasswd='Harbor12345'
+		    harborAddress='192.168.73.133:80'
+		    harborRepo='repo'
+		}
+
+		stages {
+				stage("拉取git仓库代码") {
+					steps {
+					    checkout([$class: 'GitSCM', branches: [[name: '${tag}']], extensions: [], userRemoteConfigs: [[url: 'http://192.168.73.132:8929/root/guigu-oa.git']]])
+					}
+				}
+				stage('通过maven构建项目') {
+					steps {
+					    sh '/var/jenkins_home/maven/bin/mvn clean package -DskipTests'
+					}
+				}
+				stage('通过sonarqube做代码质量检测') {
+					steps {
+						sh '/var/jenkins_home/sonar-scanner/bin/sonar-scanner -Dsonar.source=./ -Dsonar.projectname=${JOB_NAME} -Dsonar.projectKey=${JOB_NAME} -Dsonar.java.binaries=service-oa/target/ -Dsonar.login=squ_27f03a8734914e7dc55ee7c71c044aa01665e3a9'
+					}
+				}
+				stage('通过Docker制作自定义镜像') {
+					steps {
+						sh '''mv service-oa/target/*.jar docker/
+                        docker build -t ${JOB_NAME}:$tag docker/'''
+					}
+				}
+				stage('推送自定义镜像到Harbor') {
+					steps {
+						sh '''docker login -u ${harborUser} -p ${harborPasswd} ${harborAddress}
+                        docker tag ${JOB_NAME}:${tag} ${harborAddress}/${harborRepo}/${JOB_NAME}:${tag}
+                        docker push ${harborAddress}/${harborRepo}/${JOB_NAME}:${tag}'''
+					}
+				}
+				stage('通知目标服务器') {
+					steps {
+						sshPublisher(publishers: [sshPublisherDesc(configName: 'test', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: "deploy.sh $harborAddress $harborRepo $JOB_NAME $tag $port", execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+					}
+				}
+		}
+
+}
