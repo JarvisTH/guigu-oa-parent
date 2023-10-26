@@ -14,7 +14,7 @@ pipeline {
 		stages {
 				stage("拉取git仓库代码") {
 					steps {
-					    checkout([$class: 'GitSCM', branches: [[name: '${tag}']], extensions: [], userRemoteConfigs: [[url: 'http://192.168.73.132:8929/root/guigu-oa.git']]])
+					    checkout([$class: 'GitSCM', branches: [[name: '*.main']], extensions: [], userRemoteConfigs: [[url: 'http://192.168.73.132:8929/root/guigu-oa.git']]])
 					}
 				}
 				stage('通过maven构建项目') {
@@ -30,19 +30,19 @@ pipeline {
 				stage('通过Docker制作自定义镜像') {
 					steps {
 						sh '''mv service-oa/target/*.jar docker/
-                        docker build -t ${JOB_NAME}:$tag docker/'''
+                        docker build -t ${JOB_NAME}:latest docker/'''
 					}
 				}
 				stage('推送自定义镜像到Harbor') {
 					steps {
 						sh '''docker login -u ${harborUser} -p ${harborPasswd} ${harborAddress}
-                        docker tag ${JOB_NAME}:${tag} ${harborAddress}/${harborRepo}/${JOB_NAME}:${tag}
-                        docker push ${harborAddress}/${harborRepo}/${JOB_NAME}:${tag}'''
+                        docker tag ${JOB_NAME}:latest ${harborAddress}/${harborRepo}/${JOB_NAME}:latest
+                        docker push ${harborAddress}/${harborRepo}/${JOB_NAME}:latest'''
 					}
 				}
 				stage('通知目标服务器') {
 					steps {
-						sshPublisher(publishers: [sshPublisherDesc(configName: 'test', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: "deploy.sh $harborAddress $harborRepo $JOB_NAME $tag $port", execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+						sshPublisher(publishers: [sshPublisherDesc(configName: 'test', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: "deploy.sh $harborAddress $harborRepo $JOB_NAME latest $port", execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
 					}
 				}
 		}
